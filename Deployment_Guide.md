@@ -20,8 +20,10 @@
 8. [Step 6: Initialize Git and Push Code](#step-6-initialize-git-and-push-code)
 9. [Step 7: Enable GitHub Pages](#step-7-enable-github-pages)
 10. [Step 8: Verify Deployment](#step-8-verify-deployment)
-11. [Updating Your App](#updating-your-app)
-12. [Troubleshooting](#troubleshooting)
+11. [Step 9: Integrate Firebase Realtime Database](#step-9-integrate-firebase-realtime-database)
+12. [Step 10: Set Up Firebase Realtime Database](#step-10-set-up-firebase-realtime-database)
+13. [Updating Your App](#updating-your-app)
+14. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -393,13 +395,72 @@ The workflow has two jobs:
 
 ### Access Your Live App
 
-Once both jobs show ✓, your app is live at:
-
-```
-https://gunalakshme.github.io/arrear-predictor-app/
-```
-
 > **Note:** It may take 1-2 minutes after deployment for the URL to become active for the first time.
+
+---
+
+## Step 9: Integrate Firebase Realtime Database
+
+### Why This Is Needed
+
+By default, the application stores data locally in the browser's `localStorage`. This data is sandboxed per device/browser. To enable cross-device synchronization (e.g., data entered on a phone appearing on a computer), we migrate the data storage to **Firebase Realtime Database**.
+
+### What To Do
+
+1. **Install Firebase SDK in the project root**:
+   ```bash
+   npm install firebase
+   ```
+2. **Create the configuration module `src/firebase.js`**:
+   Initialize Firebase using your project config and export standard database helpers:
+   ```javascript
+   import { initializeApp } from "firebase/app";
+   import { getDatabase, ref, set, get, onValue, remove } from "firebase/database";
+
+   const firebaseConfig = {
+     apiKey: "YOUR_API_KEY",
+     authDomain: "YOUR_PROJECT.firebaseapp.com",
+     databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
+     projectId: "YOUR_PROJECT",
+     storageBucket: "YOUR_PROJECT.firebasestorage.app",
+     messagingSenderId: "YOUR_SENDER_ID",
+     appId: "YOUR_APP_ID"
+   };
+
+   const app = initializeApp(firebaseConfig);
+   const db = getDatabase(app);
+
+   export const dbWrite = async (path, data) => set(ref(db, path), data);
+   export const dbListen = (path, callback, fallback) => {
+     return onValue(ref(db, path), (snap) => callback(snap.exists() ? snap.val() : fallback));
+   };
+   ```
+3. **Refactor state management in `src/ArrearPredictor.jsx`**:
+   - Import `dbWrite` and `dbListen` from `./firebase`.
+   - Setup `useEffect` hooks to listen to database paths (`/users`, `/subjects`, `/studentDb`, `/reg`) in real-time.
+   - Add a loading screen state until the initial connection is established.
+   - Setup a debounced write helper to prevent overloading the database during user interactions.
+
+---
+
+## Step 10: Set Up Firebase Realtime Database
+
+### What To Do in Firebase Console
+
+1. **Create your project**:
+   - Go to **[console.firebase.google.com](https://console.firebase.google.com)** and click **Create a project**.
+   - Name the project `arrear-predictor`, and click continue.
+   - Register a Web App by clicking the **Web tag (`</>`)** on the homepage to generate your `firebaseConfig` object. Copy and paste it into your `src/firebase.js` config block.
+2. **Initialize Realtime Database**:
+   - In the left sidebar of the console, click **Build** → **Realtime Database**.
+   - Click the **Create Database** button.
+   - **Database Options:** Choose a region (e.g., United States) and click **Next**.
+   - **Security Rules:** Select **Start in test mode** (this allows read/write access for development) and click **Enable**.
+   
+   > **Tip:** If you do not see the "Start in test mode" options or the "Enable" button, zoom out your browser (using **Cmd + -** or **Ctrl + -**) to reveal the scrollable bottom section of the Firebase setup modal.
+
+3. **Link Database to App Config**:
+   - Verify your database URL on the dashboard header (e.g., `https://your-project-default-rtdb.firebaseio.com/`) and ensure it matches the `databaseURL` field in your `src/firebase.js` file.
 
 ---
 

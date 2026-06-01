@@ -181,8 +181,10 @@ def build_pdf():
         "8. Step 6: Initialize Git and Push Code",
         "9. Step 7: Enable GitHub Pages",
         "10. Step 8: Verify Deployment",
-        "11. Updating Your App",
-        "12. Troubleshooting",
+        "11. Step 9: Integrate Firebase Realtime Database",
+        "12. Step 10: Set Up Firebase Realtime Database",
+        "13. Updating Your App",
+        "14. Troubleshooting",
     ]
     for item in toc_items:
         story.append(Paragraph(item, styles['BulletItem']))
@@ -527,6 +529,90 @@ def build_pdf():
     ))
 
     story.append(hr())
+
+    # ── Step 9: Integrate Firebase Realtime Database ─────
+    story.append(Paragraph("Step 9: Integrate Firebase Realtime Database", styles['H1']))
+    story.append(Paragraph("Why This Is Needed", styles['H2']))
+    story.append(Paragraph(
+        "By default, the application stores data locally in the browser's <b>localStorage</b>. "
+        "This data is sandboxed per device/browser. To enable cross-device synchronization "
+        "(e.g., data entered on a phone appearing on a computer), we migrate the data storage to "
+        "<b>Firebase Realtime Database</b>.", styles['Body']
+    ))
+    story.append(spacer(4))
+    story.append(Paragraph("What To Do", styles['H2']))
+    story.append(Paragraph("1. Install Firebase SDK in the project root:", styles['Body']))
+    story.append(code_block("npm install firebase"))
+    story.append(Paragraph(
+        "2. Create the configuration module <font face='Courier' color='#d63384'>src/firebase.js</font> with these helper functions:",
+        styles['Body']
+    ))
+    story.append(code_block(
+        "import { initializeApp } from 'firebase/app';\n"
+        "import { getDatabase, ref, set, get, onValue, remove } from 'firebase/database';\n"
+        "\n"
+        "const firebaseConfig = {\n"
+        "  apiKey: 'YOUR_API_KEY',\n"
+        "  authDomain: 'YOUR_PROJECT.firebaseapp.com',\n"
+        "  databaseURL: 'https://YOUR_PROJECT-default-rtdb.firebaseio.com',\n"
+        "  projectId: 'YOUR_PROJECT',\n"
+        "  storageBucket: 'YOUR_PROJECT.firebasestorage.app',\n"
+        "  messagingSenderId: 'YOUR_SENDER_ID',\n"
+        "  appId: 'YOUR_APP_ID'\n"
+        "};\n"
+        "\n"
+        "const app = initializeApp(firebaseConfig);\n"
+        "const db = getDatabase(app);\n"
+        "\n"
+        "export const dbWrite = async (path, data) => set(ref(db, path), data);\n"
+        "export const dbListen = (path, callback, fallback) => {\n"
+        "  return onValue(ref(db, path), (snap) => callback(snap.exists() ? snap.val() : fallback));\n"
+        "};"
+    ))
+    story.append(Paragraph(
+        "3. Refactor state management in <font face='Courier' color='#d63384'>src/ArrearPredictor.jsx</font>:",
+        styles['Body']
+    ))
+    story.append(Paragraph(
+        "• Import <font face='Courier'>dbWrite</font> and <font face='Courier'>dbListen</font> from <font face='Courier'>./firebase</font>.<br/>"
+        "• Setup <font face='Courier'>useEffect</font> hooks to listen to database paths (<font face='Courier'>/users</font>, <font face='Courier'>/subjects</font>, <font face='Courier'>/studentDb</font>, <font face='Courier'>/reg</font>) in real-time.<br/>"
+        "• Add a loading screen state until the initial connection is established.<br/>"
+        "• Setup a debounced write helper to prevent overloading the database during user interactions.",
+        styles['BulletItem']
+    ))
+
+    story.append(hr())
+    story.append(PageBreak())
+
+    # ── Step 10: Set Up Firebase Database ───────────────
+    story.append(Paragraph("Step 10: Set Up Firebase Realtime Database", styles['H1']))
+    story.append(Paragraph("What To Do in Firebase Console", styles['H2']))
+    story.append(Paragraph("1. Create your project:", styles['Body']))
+    story.append(Paragraph("• Go to <b>console.firebase.google.com</b> and click <b>Create a project</b>.", styles['BulletItem']))
+    story.append(Paragraph("• Name the project <b>arrear-predictor</b>, and click continue.", styles['BulletItem']))
+    story.append(Paragraph("• Register a Web App by clicking the <b>Web tag (&lt;/&gt;)</b> on the homepage to generate your <b>firebaseConfig</b> object.", styles['BulletItem']))
+    
+    story.append(Paragraph("2. Initialize Realtime Database:", styles['Body']))
+    story.append(Paragraph("• In the left sidebar, click <b>Build</b> → <b>Realtime Database</b>.", styles['BulletItem']))
+    story.append(Paragraph("• Click the <b>Create Database</b> button.", styles['BulletItem']))
+    story.append(Paragraph("• <b>Database Options:</b> Choose a region (e.g., United States) and click <b>Next</b>.", styles['BulletItem']))
+    story.append(Paragraph("• <b>Security Rules:</b> Select <b>Start in test mode</b> (this allows read/write access for development) and click <b>Enable</b>.", styles['BulletItem']))
+    
+    story.append(spacer(4))
+    story.append(note_box(
+        "If you do not see the \"Start in test mode\" options or the \"Enable\" button, "
+        "zoom out your browser (using <b>Cmd + -</b> or <b>Ctrl + -</b>) to reveal "
+        "the scrollable bottom section of the Firebase setup modal."
+    ))
+
+    story.append(Paragraph("3. Link Database to App Config:", styles['Body']))
+    story.append(Paragraph(
+        "Verify your database URL on the dashboard header (e.g., <font face='Courier'>https://your-project-default-rtdb.firebaseio.com/</font>) "
+        "and copy it into your <font face='Courier'>src/firebase.js</font> under the <font face='Courier'>databaseURL</font> field.", styles['Body']
+    ))
+
+    story.append(hr())
+    story.append(PageBreak())
 
     # ── Updating Your App ──────────────────────────────
     story.append(Paragraph("Updating Your App", styles['H1']))

@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { dbWrite, dbListen } from "./firebase";
 import {
   BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell, Tooltip,
 } from "recharts";
@@ -183,6 +184,7 @@ function analyse(sub, reg, student) {
   };
 }
 
+// localStorage is now only used for the current user session (device-local).
 const loadLocal = (key, fallback) => {
   try {
     const val = localStorage.getItem(key);
@@ -347,11 +349,20 @@ const defaultStudentDb = {
 };
 
 export default function ArrearPredictor() {
+  // currentUser stays in localStorage — it's a device-local session
   const [currentUser, setCurrentUser] = useState(() => loadLocal("ap_currentUser", null));
-  const [users, setUsers] = useState(() => loadLocal("ap_users", {}));
-  const [subjects, setSubjects] = useState(() => loadLocal("ap_subjects", []));
-  const [studentDb, setStudentDb] = useState(() => loadLocal("ap_studentDb", {}));
-  const [reg, setReg] = useState(() => loadLocal("ap_reg", defaultReg));
+  
+  // Cloud-synced state (Firebase)
+  const [users, setUsers] = useState({});
+  const [subjects, setSubjects] = useState([]);
+  const [studentDb, setStudentDb] = useState({});
+  const [reg, setReg] = useState(defaultReg);
+  const [firebaseReady, setFirebaseReady] = useState(false);
+  
+  // Flags to prevent writing back to Firebase when we're receiving data from listeners
+  const isFromFirebase = useRef({ users: false, subjects: false, studentDb: false, reg: false });
+  // Debounce timers for Firebase writes
+  const writeTimers = useRef({});
   
   // UI States
   const [showReg, setShowReg] = useState(false);
@@ -374,25 +385,93 @@ export default function ArrearPredictor() {
   const [regDesignation, setRegDesignation] = useState("");
   const [regError, setRegError] = useState("");
 
+  // ── Firebase Real-Time Listeners ───────────────────────────────
+  useEffect(() => {
+    let loadedCount = 0;
+    const totalListeners = 4;
+    const checkReady = () => {
+      loadedCount++;
+      if (loadedCount >= totalListeners) setFirebaseReady(true);
+    };
+
+    const unsub1 = dbListen("/users", (data) => {
+      isFromFirebase.current.users = true;
+      setUsers(data || {});
+      checkReady();
+    }, {});
+
+    const unsub2 = dbListen("/subjects", (data) => {
+      isFromFirebase.current.subjects = true;
+      // Firebase converts arrays to objects with numeric keys — convert back
+      const arr = data ? (Array.isArray(data) ? data : Object.values(data)) : [];
+      setSubjects(arr);
+      checkReady();
+    }, []);
+
+    const unsub3 = dbListen("/studentDb", (data) => {
+      isFromFirebase.current.studentDb = true;
+      setStudentDb(data || {});
+      checkReady();
+    }, {});
+
+    const unsub4 = dbListen("/reg", (data) => {
+      isFromFirebase.current.reg = true;
+      setReg(data || defaultReg);
+      checkReady();
+    }, defaultReg);
+
+    return () => {
+      unsub1();
+      unsub2();
+      unsub3();
+      unsub4();
+    };
+  }, []);
+
+  // ── Debounced Firebase Write Helper ────────────────────────────
+  const debouncedWrite = useCallback((path, key, data) => {
+    if (writeTimers.current[key]) clearTimeout(writeTimers.current[key]);
+    writeTimers.current[key] = setTimeout(() => {
+      dbWrite(path, data);
+    }, 300);
+  }, []);
+
+  // ── Sync State → Firebase (skip if the change came FROM Firebase) ──
   useEffect(() => {
     saveLocal("ap_currentUser", currentUser);
   }, [currentUser]);
 
   useEffect(() => {
-    saveLocal("ap_users", users);
-  }, [users]);
+    if (isFromFirebase.current.users) {
+      isFromFirebase.current.users = false;
+      return;
+    }
+    if (firebaseReady) debouncedWrite("/users", "users", users);
+  }, [users, firebaseReady, debouncedWrite]);
 
   useEffect(() => {
-    saveLocal("ap_subjects", subjects);
-  }, [subjects]);
+    if (isFromFirebase.current.subjects) {
+      isFromFirebase.current.subjects = false;
+      return;
+    }
+    if (firebaseReady) debouncedWrite("/subjects", "subjects", subjects);
+  }, [subjects, firebaseReady, debouncedWrite]);
 
   useEffect(() => {
-    saveLocal("ap_studentDb", studentDb);
-  }, [studentDb]);
+    if (isFromFirebase.current.studentDb) {
+      isFromFirebase.current.studentDb = false;
+      return;
+    }
+    if (firebaseReady) debouncedWrite("/studentDb", "studentDb", studentDb);
+  }, [studentDb, firebaseReady, debouncedWrite]);
 
   useEffect(() => {
-    saveLocal("ap_reg", reg);
-  }, [reg]);
+    if (isFromFirebase.current.reg) {
+      isFromFirebase.current.reg = false;
+      return;
+    }
+    if (firebaseReady) debouncedWrite("/reg", "reg", reg);
+  }, [reg, firebaseReady, debouncedWrite]);
 
   // Filter subjects based on logged-in or inspected student's department
   const currentDept = useMemo(() => {
@@ -798,23 +877,22 @@ export default function ArrearPredictor() {
   };
 
   const handleSeedDemoData = () => {
-    setUsers(USERS);
-    setSubjects(defaultSubjects);
-    setStudentDb(defaultStudentDb);
+    // Write demo data directly to Firebase
+    dbWrite("/users", USERS);
+    dbWrite("/subjects", defaultSubjects);
+    dbWrite("/studentDb", defaultStudentDb);
   };
 
   const handleWipeDatabase = () => {
-    setUsers({});
-    setSubjects([]);
-    setStudentDb({});
+    // Clear Firebase data
+    dbWrite("/users", null);
+    dbWrite("/subjects", null);
+    dbWrite("/studentDb", null);
     setCurrentUser(null);
     setSelectedStudentId(null);
     setUsernameInput("");
     setPasswordInput("");
     localStorage.removeItem("ap_currentUser");
-    localStorage.removeItem("ap_users");
-    localStorage.removeItem("ap_subjects");
-    localStorage.removeItem("ap_studentDb");
   };
 
   const handleRemoveUser = (userId) => {
@@ -833,6 +911,30 @@ export default function ArrearPredictor() {
   const chartData = results.map((r) => ({ name: r.name.length > 12 ? r.name.slice(0, 11) + "…" : r.name, risk: Math.round(r.risk * 100), color: bandOf(r.risk).color }));
 
   const fieldStyle = { background: C.paper, border: `1px solid ${C.line}`, color: C.ink, fontFamily: "'JetBrains Mono', monospace" };
+
+  /* ================================================================ */
+  /* VIEW 0: LOADING SCREEN (while Firebase connects)                  */
+  /* ================================================================ */
+  if (!firebaseReady) {
+    return (
+      <div style={{ background: C.paper, color: C.ink, minHeight: "100vh", fontFamily: "'Albert Sans', sans-serif" }} className="flex flex-col justify-center items-center">
+        <div className="text-center animate-fade-in">
+          <div className="inline-flex items-center justify-center rounded-2xl mb-6" style={{ width: 72, height: 72, background: C.brand }}>
+            <GraduationCap size={40} color={C.paper} />
+          </div>
+          <h1 style={{ fontFamily: "'Fraunces', serif", fontWeight: 700 }} className="text-2xl mb-4">Arrear Predictor & Study Planner</h1>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <div style={{
+              width: 20, height: 20, border: `3px solid ${C.line}`, borderTopColor: C.brand,
+              borderRadius: "50%", animation: "spin 0.8s linear infinite"
+            }} />
+            <span style={{ color: C.faint, fontSize: 14 }}>Connecting to cloud database…</span>
+          </div>
+        </div>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
 
   /* ================================================================ */
   /* VIEW 1: AUTHENTICATION PORTAL                                    */

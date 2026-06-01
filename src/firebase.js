@@ -59,7 +59,7 @@ export const dbRead = async (path, fallback = null) => {
  * Calls `callback(data)` whenever data changes.
  * Returns an unsubscribe function.
  */
-export const dbListen = (path, callback, fallback = null) => {
+export const dbListen = (path, callback, fallback = null, onError = null) => {
   const dbRef = ref(db, path);
   const unsubscribe = onValue(
     dbRef,
@@ -68,6 +68,7 @@ export const dbListen = (path, callback, fallback = null) => {
     },
     (error) => {
       console.error(`Firebase listen error at ${path}:`, error);
+      if (onError) onError(error);
       callback(fallback);
     }
   );
@@ -84,5 +85,7 @@ export const dbRemove = async (path) => {
     console.error(`Firebase remove error at ${path}:`, error);
   }
 };
+
+export const dbUrl = firebaseConfig.databaseURL;
 
 export { db };

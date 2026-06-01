@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { dbWrite, dbListen } from "./firebase";
+import { dbWrite, dbListen, dbUrl } from "./firebase";
 import {
   BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell, Tooltip,
 } from "recharts";
@@ -358,6 +358,7 @@ export default function ArrearPredictor() {
   const [studentDb, setStudentDb] = useState({});
   const [reg, setReg] = useState(defaultReg);
   const [firebaseReady, setFirebaseReady] = useState(false);
+  const [dbError, setDbError] = useState("");
   
   // Flags to prevent writing back to Firebase when we're receiving data from listeners
   const isFromFirebase = useRef({ users: false, subjects: false, studentDb: false, reg: false });
@@ -394,11 +395,16 @@ export default function ArrearPredictor() {
       if (loadedCount >= totalListeners) setFirebaseReady(true);
     };
 
+    const handleError = (err) => {
+      console.error("Firebase connection error:", err);
+      setDbError(err.message || "Failed to sync with database.");
+    };
+
     const unsub1 = dbListen("/users", (data) => {
       isFromFirebase.current.users = true;
       setUsers(data || {});
       checkReady();
-    }, {});
+    }, {}, handleError);
 
     const unsub2 = dbListen("/subjects", (data) => {
       isFromFirebase.current.subjects = true;
@@ -406,19 +412,19 @@ export default function ArrearPredictor() {
       const arr = data ? (Array.isArray(data) ? data : Object.values(data)) : [];
       setSubjects(arr);
       checkReady();
-    }, []);
+    }, [], handleError);
 
     const unsub3 = dbListen("/studentDb", (data) => {
       isFromFirebase.current.studentDb = true;
       setStudentDb(data || {});
       checkReady();
-    }, {});
+    }, {}, handleError);
 
     const unsub4 = dbListen("/reg", (data) => {
       isFromFirebase.current.reg = true;
       setReg(data || defaultReg);
       checkReady();
-    }, defaultReg);
+    }, defaultReg, handleError);
 
     return () => {
       unsub1();
@@ -917,19 +923,47 @@ export default function ArrearPredictor() {
   /* ================================================================ */
   if (!firebaseReady) {
     return (
-      <div style={{ background: C.paper, color: C.ink, minHeight: "100vh", fontFamily: "'Albert Sans', sans-serif" }} className="flex flex-col justify-center items-center">
-        <div className="text-center animate-fade-in">
+      <div style={{ background: C.paper, color: C.ink, minHeight: "100vh", fontFamily: "'Albert Sans', sans-serif" }} className="flex flex-col justify-center items-center p-6">
+        <div className="text-center animate-fade-in max-w-md w-full">
           <div className="inline-flex items-center justify-center rounded-2xl mb-6" style={{ width: 72, height: 72, background: C.brand }}>
             <GraduationCap size={40} color={C.paper} />
           </div>
           <h1 style={{ fontFamily: "'Fraunces', serif", fontWeight: 700 }} className="text-2xl mb-4">Arrear Predictor & Study Planner</h1>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-            <div style={{
-              width: 20, height: 20, border: `3px solid ${C.line}`, borderTopColor: C.brand,
-              borderRadius: "50%", animation: "spin 0.8s linear infinite"
-            }} />
-            <span style={{ color: C.faint, fontSize: 14 }}>Connecting to cloud database…</span>
-          </div>
+          
+          {dbError ? (
+            <div className="rounded-xl p-4 mb-4 text-left shadow-sm" style={{ background: "#FCE8E6", border: `1px solid ${C.high}33` }}>
+              <div style={{ fontWeight: 600, color: C.high, fontSize: 14 }} className="flex items-center gap-2 mb-1.5">
+                <AlertTriangle size={16} /> Database Connection Failure
+              </div>
+              <p style={{ fontSize: 13, color: C.ink, lineHeight: "1.4" }} className="mb-3">
+                {dbError}
+              </p>
+              <div style={{ fontSize: 11.5, color: C.faint, background: "#F5F1E7", padding: "6px 10px", borderRadius: 6 }} className="mb-3">
+                <b>Configured Database URL:</b><br/>
+                <code style={{ wordBreak: "break-all", fontFamily: "monospace" }}>{dbUrl}</code>
+              </div>
+              <p style={{ fontSize: 12, color: C.faint, lineHeight: "1.4" }}>
+                <b>Troubleshooting Check:</b>
+                <br/>1. Verify that this URL matches your database URL in the Firebase Console exactly.
+                <br/>2. If your database region is Europe or Asia, your URL must include that region.
+                <br/>3. Verify that your Realtime Database security rules are set to <b>Start in test mode</b> (public read/write).
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <div style={{
+                width: 20, height: 20, border: `3px solid ${C.line}`, borderTopColor: C.brand,
+                borderRadius: "50%", animation: "spin 0.8s linear infinite"
+              }} />
+              <span style={{ color: C.faint, fontSize: 14 }}>Connecting to cloud database…</span>
+            </div>
+          )}
+          
+          {!dbError && (
+            <div style={{ fontSize: 11, color: C.faint, marginTop: 12 }}>
+              Connecting to: <code style={{ wordBreak: "break-all" }}>{dbUrl || "none"}</code>
+            </div>
+          )}
         </div>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
